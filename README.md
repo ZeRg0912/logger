@@ -67,7 +67,7 @@ logger.ConsoleHelpf("Форматированная справка: %s", "ком
 package main
 
 import (
-    "github.com/yourusername/go-logger"
+    "github.com/ZeRg0912/logger"
 )
 
 func main() {
@@ -110,7 +110,7 @@ func main() {
 package main
 
 import (
-    "github.com/yourusername/go-logger"
+    "github.com/ZeRg0912/logger"
 )
 
 func main() {
@@ -139,7 +139,7 @@ package main
 
 import (
     "net/http"
-    "github.com/yourusername/go-logger"
+    "github.com/ZeRg0912/logger"
 )
 
 func main() {
