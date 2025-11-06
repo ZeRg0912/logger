@@ -2,7 +2,7 @@
 
 ![Go Version](https://img.shields.io/badge/Go-1.23%2B-blue)
 ![License](https://img.shields.io/badge/License-MIT-green)
-![Version](https://img.shields.io/badge/Version-1.0.0-orange)
+![Version](https://img.shields.io/badge/Version-1.0.1-orange)
 
 Простой, но мощный пакет для логирования в Go-приложениях с поддержкой уровней логирования, ротации файлов и цветового вывода.
 
