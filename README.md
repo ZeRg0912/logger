@@ -22,8 +22,6 @@
 ## 🚀 Быстрый старт
 ### Установка
 ```
-go get github.com/ZeRg0912/logger@v1.0.0
-или
 go get github.com/ZeRg0912/logger@latest
 ```
 
