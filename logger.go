@@ -140,8 +140,8 @@ func (l *Logger) log(level LogLevel, levelStr string, format string, v ...interf
 	// Write to console
 	if l.outputMode == ConsoleOnly || l.outputMode == Both {
 		if level >= l.consoleLevel {
-			consoleLogger := log.New(getConsoleWriter(level), levelStr+": ", timestamp)
-			consoleLogger.Println(msg)
+			consoleLogger := log.New(getConsoleWriter(level), "", 0)
+			consoleLogger.Printf("%s %s: %s - %s\n", time.Now().Format("2006/01/02 15:04:04"), levelStr, sourceInfo, msg)
 		}
 	}
 
