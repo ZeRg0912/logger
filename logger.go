@@ -154,7 +154,7 @@ func (l *Logger) log(level LogLevel, levelStr string, format string, v ...interf
 			}
 
 			fileLogger := log.New(l.fileWriter, "", 0)
-			fileLogger.Printf("%s %s: %s %s\n", time.Now().Format("2006/01/02 15:04:04"), levelStr, sourceInfo, msg)
+			fileLogger.Printf("%s %s: %s - %s\n", time.Now().Format("2006/01/02 15:04:04"), levelStr, sourceInfo, msg)
 		}
 	}
 }
