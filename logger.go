@@ -8,7 +8,9 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
+	"time"
 )
 
 // LogLevel represents the severity level of log messages.
@@ -135,7 +137,9 @@ func (l *Logger) log(level LogLevel, levelStr string, format string, v ...interf
 	defer l.mu.Unlock()
 
 	msg := fmt.Sprintf(format, v...)
-	timestamp := log.Ldate | log.Ltime
+	_, file, line, _ := runtime.Caller(2)
+	fileName := filepath.Base(file)
+	sourceInfo := fmt.Sprintf("%s:%d", fileName, line)
 
 	// Write to console
 	if l.outputMode == ConsoleOnly || l.outputMode == Both {
