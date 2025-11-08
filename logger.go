@@ -248,7 +248,7 @@ func ConsoleError(format string, v ...interface{}) {
 
 	// Always show error to user in console
 	if defaultLogger == nil || defaultLogger.outputMode == ConsoleOnly || defaultLogger.outputMode == Both {
-		fmt.Fprintln(os.Stderr, "❌ Error:", msg)
+		fmt.Fprintln(os.Stderr, "Error:", msg)
 	}
 
 	// Log to file if needed
@@ -264,7 +264,7 @@ func ConsoleInfo(format string, v ...interface{}) {
 	msg := fmt.Sprintf(format, v...)
 
 	if defaultLogger == nil || defaultLogger.outputMode == ConsoleOnly || defaultLogger.outputMode == Both {
-		fmt.Println("ℹ️ ", msg)
+		fmt.Println("Info:", msg)
 	}
 
 	if defaultLogger != nil && (defaultLogger.outputMode == FileOnly || defaultLogger.outputMode == Both) {
@@ -279,7 +279,7 @@ func ConsoleSuccess(format string, v ...interface{}) {
 	msg := fmt.Sprintf(format, v...)
 
 	if defaultLogger == nil || defaultLogger.outputMode == ConsoleOnly || defaultLogger.outputMode == Both {
-		fmt.Println("✅", msg)
+		fmt.Println("Success:", msg)
 	}
 
 	if defaultLogger != nil && (defaultLogger.outputMode == FileOnly || defaultLogger.outputMode == Both) {
