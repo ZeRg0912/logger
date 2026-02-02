@@ -5,7 +5,6 @@ package logger
 import (
 	"fmt"
 	"io"
-	"log"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -37,11 +36,19 @@ type Logger struct {
 	consoleLevel LogLevel
 	fileLevel    LogLevel
 	outputMode   OutputMode
-	fileWriter   io.Writer
-	maxFileSize  int64
-	basePath     string
-	currentSize  int64
-	mu           sync.Mutex
+
+	fileWriter  io.Writer
+	maxFileSize int64
+
+	// baePath is the "template" path from config, e.g. logs/app.log
+	// Actual log files are created with timestamp suffix based on basePath.
+	basePath string
+
+	// filePath is the currently opened actual file path with timestamp suffix.
+	filePath string
+
+	currentSize int64
+	mu          sync.Mutex
 }
 
 var (
@@ -87,6 +94,32 @@ func InitBoth(consoleLevel, fileLevel LogLevel, filePath string, maxFileSize int
 	return Init(Both, consoleLevel, fileLevel, filePath, maxFileSize)
 }
 
+// Close closes underlying file writer (if any). Safe to call multiple times.
+func Close() error {
+	if defaultLogger == nil {
+		return nil
+	}
+	return defaultLogger.Close()
+}
+
+// Close closes file resources of this logger (if any). Safe to call multiple times.
+func (l *Logger) Close() error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	if file, ok := l.fileWriter.(*os.File); ok {
+		err := file.Close()
+		l.fileWriter = nil
+		l.currentSize = 0
+		l.filePath = ""
+		return err
+	}
+	l.fileWriter = nil
+	l.currentSize = 0
+	l.filePath = ""
+	return nil
+}
+
 // newLogger creates a new Logger instance with the specified configuration.
 func newLogger(outputMode OutputMode, consoleLevel, fileLevel LogLevel, filePath string, maxFileSize int64) (*Logger, error) {
 	l := &Logger{
@@ -123,12 +156,43 @@ func (l *Logger) createFileWriter() error {
 
 	info, err := file.Stat()
 	if err != nil {
+		_ = file.Close()
 		return err
 	}
+
 	l.currentSize = info.Size()
 	l.fileWriter = file
-
 	return nil
+}
+
+func (l *Logger) formatLine(levelStr string, sourceInfo string, msg string) string {
+	return fmt.Sprintf("%s %s: %s - %s\n", time.Now().Format("2006/01/02 15:04:04"), levelStr, sourceInfo, msg)
+}
+
+func (l *Logger) writeConsole(level LogLevel, line string) {
+	_, _ = io.WriteString(getConsoleWriter(level), line)
+}
+
+func (l *Logger) writeFile(line string) {
+	if l.fileWriter == nil {
+		_ = l.openNewFileLocked()
+		if l.fileWriter == nil {
+			return
+		}
+	}
+
+	nextBytes := int64(len(line))
+	if l.shouldRotate(nextBytes) {
+		_ = l.rotateLocked()
+		if l.fileWriter == nil {
+			return
+		}
+	}
+
+	n, err := io.WriteString(l.fileWriter, line)
+	if err == nil {
+		l.currentSize += int64(n)
+	}
 }
 
 // log is the internal method that handles actual log message processing and output.
@@ -141,62 +205,127 @@ func (l *Logger) log(level LogLevel, levelStr string, format string, v ...interf
 	fileName := filepath.Base(file)
 	sourceInfo := fmt.Sprintf("%s:%d", fileName, line)
 
+	logLine := l.formatLine(levelStr, sourceInfo, msg)
+
 	// Write to console
-	if l.outputMode == ConsoleOnly || l.outputMode == Both {
-		if level >= l.consoleLevel {
-			consoleLogger := log.New(getConsoleWriter(level), "", 0)
-			consoleLogger.Printf("%s %s: %s - %s\n", time.Now().Format("2006/01/02 15:04:04"), levelStr, sourceInfo, msg)
-		}
+	if (l.outputMode == ConsoleOnly || l.outputMode == Both) && level >= l.consoleLevel {
+		l.writeConsole(level, logLine)
 	}
 
 	// Write to file
-	if (l.outputMode == FileOnly || l.outputMode == Both) && l.fileWriter != nil {
-		if level >= l.fileLevel {
-			// Check rotation
-			if l.shouldRotate() {
-				l.rotateFile()
-			}
-
-			fileLogger := log.New(l.fileWriter, "", 0)
-			fileLogger.Printf("%s %s: %s - %s\n", time.Now().Format("2006/01/02 15:04:04"), levelStr, sourceInfo, msg)
-		}
+	if (l.outputMode == FileOnly || l.outputMode == Both) && level >= l.fileLevel {
+		l.writeFile(logLine)
 	}
 }
 
 // shouldRotate checks if log file rotation is needed based on file size.
-func (l *Logger) shouldRotate() bool {
-	return l.maxFileSize > 0 && l.currentSize >= l.maxFileSize
+func (l *Logger) shouldRotate(nextBytes int64) bool {
+	return l.maxFileSize > 0 && (l.currentSize+nextBytes) > l.maxFileSize
 }
 
-// rotateFile performs log file rotation by renaming existing files and creating a new one.
-func (l *Logger) rotateFile() error {
-	if l.fileWriter == nil {
+// rotateLocked closes current file and opens a new timestamp file.
+// Must be called under l.mu.
+// no file-count limit: old files are kept.
+func (l *Logger) rotateLocked() error {
+	return l.openNewFileLocked()
+}
+
+// openNewFileLocked opens a new timestamp file based on l.basePath.
+// Must be called under l.mu.
+func (l *Logger) openNewFileLocked() error {
+	if l.basePath == "" {
+		return fmt.Errorf("log file path is empty")
+	}
+
+	if err := ensureDir(l.basePath); err != nil {
+		return err
+	}
+
+	path, err := uniqueLogPath(l.basePath)
+	if err != nil {
+		return err
+	}
+
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+	if err != nil {
+		return err
+	}
+
+	// Close old file if any
+	if old, ok := l.fileWriter.(*os.File); ok && old != nil {
+		_ = old.Close()
+	}
+
+	l.fileWriter = file
+	l.filePath = path
+
+	if stat, err := file.Stat(); err == nil {
+		l.currentSize = stat.Size()
+	} else {
+		l.currentSize = 0
+	}
+
+	return nil
+}
+
+// ensureDir creates directory for file path if needed.
+func ensureDir(path string) error {
+	dir := filepath.Dir(path)
+	if dir == "." || dir == "" || dir == string(filepath.Separator) {
 		return nil
 	}
+	return os.MkdirAll(dir, 0755)
+}
 
-	if file, ok := l.fileWriter.(*os.File); ok {
-		file.Close()
+// timestampSuffix returns a Windows safe timestamp with seconds.
+func timestampSuffix() string {
+	return time.Now().Format("02.01.2006_15-04-02")
+}
+
+// pathWithSuffix inserts suffix before extension:
+// logs/app.log + "31.01.2026_23-10-15" - > logs/app_31.01.2026_23-10-15.log
+func pathWithSuffix(basePath, suffix string) string {
+	dir := filepath.Dir(basePath)
+	base := filepath.Base(basePath)
+
+	ext := filepath.Ext(base)
+	name := base[:len(base)-len(ext)]
+
+	newBase := fmt.Sprintf("%s_%s%s", name, suffix, ext)
+	if dir == "." || dir == "" {
+		return newBase
+	}
+	return filepath.Join(dir, newBase)
+}
+
+// uniqueLogPath picks a unique timestamped file path. If collision occurs, adds _01, _02, ...
+func uniqueLogPath(basePath string) (string, error) {
+	suffix := timestampSuffix()
+	candidatePath := pathWithSuffix(basePath, suffix)
+
+	_, statErr := os.Stat(candidatePath)
+	if os.IsNotExist(statErr) {
+		return candidatePath, nil
+	}
+	if statErr != nil {
+		return "", statErr
 	}
 
-	ext := filepath.Ext(l.basePath)
-	baseName := l.basePath[:len(l.basePath)-len(ext)]
+	for i := 1; i <= 9999; i++ {
+		nextSuffix := fmt.Sprintf("%s_%02d", suffix, i)
+		nextPath := pathWithSuffix(basePath, nextSuffix)
 
-	for i := 4; i >= 0; i-- {
-		var oldPath string
-		if i == 0 {
-			oldPath = l.basePath
-		} else {
-			oldPath = fmt.Sprintf("%s_%d%s", baseName, i, ext)
+		_, statErr = os.Stat(nextPath)
+		if os.IsNotExist(statErr) {
+			return nextPath, nil
 		}
-
-		newPath := fmt.Sprintf("%s_%d%s", baseName, i+1, ext)
-
-		if _, err := os.Stat(oldPath); err == nil {
-			os.Rename(oldPath, newPath)
+		if statErr != nil {
+			return "", statErr
 		}
 	}
 
-	return l.createFileWriter()
+	msSUffix := time.Now().Format("02.01.2006_15-40-05.000")
+	return pathWithSuffix(basePath, msSUffix), nil
 }
 
 // getConsoleWriter returns the appropriate console writer based on log level.
