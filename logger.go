@@ -149,19 +149,25 @@ func (l *Logger) createFileWriter() error {
 		}
 	}
 
-	file, err := os.OpenFile(l.basePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+	path, err := uniqueLogPath(l.basePath)
 	if err != nil {
 		return err
 	}
 
-	info, err := file.Stat()
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+	if err != nil {
+		return err
+	}
+
+	stat, err := file.Stat()
 	if err != nil {
 		_ = file.Close()
 		return err
 	}
 
-	l.currentSize = info.Size()
+	l.currentSize = stat.Size()
 	l.fileWriter = file
+	l.filePath = path
 	return nil
 }
 
