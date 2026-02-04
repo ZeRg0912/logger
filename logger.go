@@ -172,7 +172,7 @@ func (l *Logger) createFileWriter() error {
 }
 
 func (l *Logger) formatLine(levelStr string, sourceInfo string, msg string) string {
-	return fmt.Sprintf("%s %s: %s - %s\n", time.Now().Format("2006/01/02 15:04:04"), levelStr, sourceInfo, msg)
+	return fmt.Sprintf("%s %s: %s - %s\n", time.Now().Format("2006/01/02 15:04:05"), levelStr, sourceInfo, msg)
 }
 
 func (l *Logger) writeConsole(level LogLevel, line string) {
@@ -285,7 +285,7 @@ func ensureDir(path string) error {
 
 // timestampSuffix returns a Windows safe timestamp with seconds.
 func timestampSuffix() string {
-	return time.Now().Format("02.01.2006_15-04-02")
+	return time.Now().Format("02.01.2006_15-04-05.000")
 }
 
 // pathWithSuffix inserts suffix before extension:
